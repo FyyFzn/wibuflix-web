@@ -591,7 +591,7 @@ export default function PlayerPage() {
       {/* Main Video Viewport Container */}
       <div
         ref={containerRef}
-        className="relative w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl border border-white/10 flex items-center justify-center group"
+        className="relative w-full aspect-video max-h-[72vh] max-w-5xl mx-auto bg-black rounded-2xl overflow-hidden shadow-2xl border border-white/10 flex items-center justify-center group"
       >
         {resumeToast && (
           <div className="absolute top-4 left-4 z-40 px-3.5 py-1.5 rounded-full bg-accent text-white text-xs font-semibold shadow-2xl flex items-center gap-1.5 transition-all">
@@ -701,6 +701,106 @@ export default function PlayerPage() {
             />
           </>
         )}
+
+        {/* Server Selection Modal (Inside containerRef for Fullscreen support) */}
+        {serverModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+            <div className="relative w-full max-w-md bg-card rounded-2xl p-6 border border-white/10 shadow-2xl">
+              <button
+                onClick={() => setServerModalOpen(false)}
+                className="absolute top-4 right-4 text-gray-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <h3 className="text-base font-bold text-white mb-1">Pilih Server Video</h3>
+              <p className="text-xs text-gray-400 mb-4">Ganti server jika video lambat atau gagal diputar</p>
+
+              <div className="space-y-2 max-h-72 overflow-y-auto">
+                {/* Native Direct Option */}
+                <button
+                  onClick={() => {
+                    setServerModalOpen(false);
+                    loadStream();
+                  }}
+                  className={`w-full flex items-center justify-between p-3 rounded-xl border text-xs font-semibold transition-colors ${
+                    playerMode === 'hls'
+                      ? 'bg-accent/15 border-accent text-accent'
+                      : 'bg-surface border-white/5 text-gray-300 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <span>Azure Direct HLS (Rekomendasi)</span>
+                  <span className="text-[10px] uppercase font-bold text-emerald-400">Direk Cepat</span>
+                </button>
+
+                {/* Other servers */}
+                {servers.map((s, idx) => (
+                  <button
+                    key={s.post || idx}
+                    onClick={() => handleSelectServer(s)}
+                    className={`w-full flex items-center justify-between p-3 rounded-xl border text-xs font-semibold transition-colors ${
+                      activeServerName === (s.namaHost || s.nama)
+                        ? 'bg-accent/15 border-accent text-accent'
+                        : 'bg-surface border-white/5 text-gray-300 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <span>{s.namaHost || s.nama}</span>
+                    <span className="text-[10px] text-gray-400 uppercase">{s.type || 'Embed'}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Playback Speed Modal (Inside containerRef for Fullscreen support) */}
+        {speedModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+            <div className="relative w-full max-w-sm bg-card rounded-2xl p-6 border border-white/10 shadow-2xl">
+              <button
+                onClick={() => setSpeedModalOpen(false)}
+                className="absolute top-4 right-4 text-gray-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <h3 className="text-base font-bold text-white mb-1 flex items-center gap-2">
+                <Gauge className="w-5 h-5 text-accent" />
+                <span>Kecepatan Putar</span>
+              </h3>
+              <p className="text-xs text-gray-400 mb-4">Pilih kecepatan pemutaran video</p>
+
+              <div className="space-y-2">
+                {[0.5, 0.75, 1.0, 1.25, 1.5, 2.0].map((speed) => (
+                  <button
+                    key={speed}
+                    onClick={() => {
+                      handlePlaybackRateChange(speed);
+                      setSpeedModalOpen(false);
+                    }}
+                    className={`w-full flex items-center justify-between p-3 rounded-xl border text-xs font-semibold transition-colors ${
+                      playbackRate === speed
+                        ? 'bg-accent/15 border-accent text-accent'
+                        : 'bg-surface border-white/5 text-gray-300 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <span className="font-mono text-sm">{speed}x {speed === 1.0 ? '(Normal)' : ''}</span>
+                    {playbackRate === speed && (
+                      <span className="w-2.5 h-2.5 rounded-full bg-accent shadow-sm shadow-accent" />
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                onClick={() => setSpeedModalOpen(false)}
+                className="w-full mt-4 py-2.5 rounded-xl bg-surface hover:bg-white/10 text-xs font-semibold text-gray-300 hover:text-white border border-white/5 transition-colors"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Episode Navigation and Server Switcher Row */}
@@ -746,106 +846,6 @@ export default function PlayerPage() {
           )}
         </div>
       </div>
-
-      {/* Server Selection Modal */}
-      {serverModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="relative w-full max-w-md bg-card rounded-2xl p-6 border border-white/10 shadow-2xl">
-            <button
-              onClick={() => setServerModalOpen(false)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-white"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <h3 className="text-base font-bold text-white mb-1">Pilih Server Video</h3>
-            <p className="text-xs text-gray-400 mb-4">Ganti server jika video lambat atau gagal diputar</p>
-
-            <div className="space-y-2 max-h-72 overflow-y-auto">
-              {/* Native Direct Option */}
-              <button
-                onClick={() => {
-                  setServerModalOpen(false);
-                  loadStream();
-                }}
-                className={`w-full flex items-center justify-between p-3 rounded-xl border text-xs font-semibold transition-colors ${
-                  playerMode === 'hls'
-                    ? 'bg-accent/15 border-accent text-accent'
-                    : 'bg-surface border-white/5 text-gray-300 hover:text-white hover:bg-white/5'
-                }`}
-              >
-                <span>Azure Direct HLS (Rekomendasi)</span>
-                <span className="text-[10px] uppercase font-bold text-emerald-400">Direk Cepat</span>
-              </button>
-
-              {/* Other servers */}
-              {servers.map((s, idx) => (
-                <button
-                  key={s.post || idx}
-                  onClick={() => handleSelectServer(s)}
-                  className={`w-full flex items-center justify-between p-3 rounded-xl border text-xs font-semibold transition-colors ${
-                    activeServerName === (s.namaHost || s.nama)
-                      ? 'bg-accent/15 border-accent text-accent'
-                      : 'bg-surface border-white/5 text-gray-300 hover:text-white hover:bg-white/5'
-                  }`}
-                >
-                  <span>{s.namaHost || s.nama}</span>
-                  <span className="text-[10px] text-gray-400 uppercase">{s.type || 'Embed'}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Playback Speed Modal */}
-      {speedModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="relative w-full max-w-sm bg-card rounded-2xl p-6 border border-white/10 shadow-2xl">
-            <button
-              onClick={() => setSpeedModalOpen(false)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-white"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <h3 className="text-base font-bold text-white mb-1 flex items-center gap-2">
-              <Gauge className="w-5 h-5 text-accent" />
-              <span>Kecepatan Putar</span>
-            </h3>
-            <p className="text-xs text-gray-400 mb-4">Pilih kecepatan pemutaran video</p>
-
-            <div className="space-y-2">
-              {[0.5, 0.75, 1.0, 1.25, 1.5, 2.0].map((speed) => (
-                <button
-                  key={speed}
-                  onClick={() => {
-                    handlePlaybackRateChange(speed);
-                    setSpeedModalOpen(false);
-                  }}
-                  className={`w-full flex items-center justify-between p-3 rounded-xl border text-xs font-semibold transition-colors ${
-                    playbackRate === speed
-                      ? 'bg-accent/15 border-accent text-accent'
-                      : 'bg-surface border-white/5 text-gray-300 hover:text-white hover:bg-white/5'
-                  }`}
-                >
-                  <span className="font-mono text-sm">{speed}x {speed === 1.0 ? '(Normal)' : ''}</span>
-                  {playbackRate === speed && (
-                    <span className="w-2.5 h-2.5 rounded-full bg-accent shadow-sm shadow-accent" />
-                  )}
-                </button>
-              ))}
-            </div>
-
-            <button
-              onClick={() => setSpeedModalOpen(false)}
-              className="w-full mt-4 py-2.5 rounded-xl bg-surface hover:bg-white/10 text-xs font-semibold text-gray-300 hover:text-white border border-white/5 transition-colors"
-            >
-              Tutup
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

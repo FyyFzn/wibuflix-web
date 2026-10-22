@@ -12,7 +12,8 @@ import {
   SkipForward,
   FastForward,
   Server,
-  ArrowLeft
+  ArrowLeft,
+  Gauge
 } from 'lucide-react';
 import { formatDuration } from '../services/storage';
 
@@ -119,16 +120,32 @@ export default function PlayerControls({
           </h2>
         </div>
 
-        {onOpenServerModal && (
+        <div className="flex items-center gap-2">
+          {/* Top-Right Speed Button (Matches Mobile App layout) */}
           <button
-            onClick={onOpenServerModal}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/40 hover:bg-black/60 text-xs font-semibold text-white backdrop-blur-md border border-white/10 transition-colors"
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onOpenSpeedModal) onOpenSpeedModal();
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black/40 hover:bg-black/60 text-xs font-semibold text-white backdrop-blur-md border border-white/10 transition-colors cursor-pointer"
+            title="Kecepatan Putar"
           >
-            <Server className="w-3.5 h-3.5 text-accent" />
-            <span className="hidden sm:inline">{activeServerName || 'Pilih Server'}</span>
-            <span className="sm:hidden">Server</span>
+            <Gauge className="w-3.5 h-3.5 text-accent" />
+            <span>{playbackRate}x</span>
           </button>
-        )}
+
+          {onOpenServerModal && (
+            <button
+              onClick={onOpenServerModal}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/40 hover:bg-black/60 text-xs font-semibold text-white backdrop-blur-md border border-white/10 transition-colors"
+            >
+              <Server className="w-3.5 h-3.5 text-accent" />
+              <span className="hidden sm:inline">{activeServerName || 'Pilih Server'}</span>
+              <span className="sm:hidden">Server</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Center Controls (Skip 10s, Play/Pause) */}
