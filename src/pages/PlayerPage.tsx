@@ -13,10 +13,17 @@ export default function PlayerPage() {
 
   const episodeUrl = searchParams.get('url') || '';
   const seriesUrl = searchParams.get('seriUrl') || '';
-  const episodeTitle = searchParams.get('judul') || 'Episode';
-  const seriesTitle = searchParams.get('seriJudul') || episodeTitle;
+  const [episodeTitle, setEpisodeTitle] = useState(() => searchParams.get('judul') || '');
+  const [seriesTitle, setSeriesTitle] = useState(() => searchParams.get('seriJudul') || '');
   const coverImage = searchParams.get('gambar') || '';
   const uniqueId = searchParams.get('uniqueId') || '';
+
+  useEffect(() => {
+    const qJudul = searchParams.get('judul');
+    if (qJudul) setEpisodeTitle(qJudul);
+    const qSeriJudul = searchParams.get('seriJudul');
+    if (qSeriJudul) setSeriesTitle(qSeriJudul);
+  }, [searchParams]);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -110,6 +117,9 @@ export default function PlayerPage() {
       ).catch(() => null);
 
       if (smartPlay) {
+        if (smartPlay.judul && (!episodeTitle || episodeTitle === 'Episode')) {
+          setEpisodeTitle(smartPlay.judul);
+        }
         if (smartPlay.nav_prev) setNavPrev(smartPlay.nav_prev);
         if (smartPlay.nav_next) setNavNext(smartPlay.nav_next);
         if (smartPlay.servers?.length) setServers(smartPlay.servers);
@@ -126,6 +136,9 @@ export default function PlayerPage() {
       // 2. Fallback to Scrape UI servers
       const scrape = await scrapeVideo(episodeUrl, seriesTitle, episodeTitle).catch(() => null);
       if (scrape?.status === 'success' && scrape.data) {
+        if (scrape.data.judul && (!episodeTitle || episodeTitle === 'Episode')) {
+          setEpisodeTitle(scrape.data.judul);
+        }
         if (scrape.data.nav_prev) setNavPrev(scrape.data.nav_prev);
         if (scrape.data.nav_next) setNavNext(scrape.data.nav_next);
         if (scrape.data.servers?.length) setServers(scrape.data.servers);
@@ -221,6 +234,10 @@ export default function PlayerPage() {
     });
 
     if (idx !== -1) {
+      if (episodes[idx].judul && (!episodeTitle || episodeTitle === 'Episode')) {
+        setEpisodeTitle(episodes[idx].judul);
+      }
+
       const firstNum = parseFloat(episodes[0].judul?.match(/(?:episode|eps|ova)\s*(\d+(?:\.\d+)?)/i)?.[1] || '1');
       const lastNum = parseFloat(episodes[episodes.length - 1].judul?.match(/(?:episode|eps|ova)\s*(\d+(?:\.\d+)?)/i)?.[1] || '2');
       const isAsc = firstNum < lastNum;
@@ -437,8 +454,15 @@ export default function PlayerPage() {
 
   const navigateToEpisode = (targetUrl: string) => {
     saveCurrentProgress();
+    const cleanUrl = (u: string) => decodeURIComponent(u).replace(/\/$/, '');
+    const targetNorm = cleanUrl(targetUrl);
+    const targetEp = episodes.find((ep) => {
+      const urlsToCheck = [ep.url, ...(Object.values(ep.urls || {}))].filter(Boolean) as string[];
+      return urlsToCheck.some((u) => cleanUrl(u) === targetNorm);
+    });
+    const nextJudul = targetEp?.judul || '';
     navigate(
-      `/player?url=${encodeURIComponent(targetUrl)}&seriUrl=${encodeURIComponent(seriesUrl)}&seriJudul=${encodeURIComponent(seriesTitle)}&gambar=${encodeURIComponent(coverImage)}&uniqueId=${encodeURIComponent(uniqueId)}`
+      `/player?url=${encodeURIComponent(targetUrl)}&seriUrl=${encodeURIComponent(seriesUrl)}&seriJudul=${encodeURIComponent(seriesTitle)}&judul=${encodeURIComponent(nextJudul)}&gambar=${encodeURIComponent(coverImage)}&uniqueId=${encodeURIComponent(uniqueId)}`
     );
   };
 

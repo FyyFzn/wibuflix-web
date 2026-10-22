@@ -250,7 +250,7 @@ export default function DetailPage() {
             </div>
 
             <Link
-              to={`/player?url=${encodeURIComponent(lastWatched.url)}&seriUrl=${encodeURIComponent(decodedUrl)}&seriJudul=${encodeURIComponent(data.judul_seri)}&judul=${encodeURIComponent(lastWatched.judulSeri)}&gambar=${encodeURIComponent(cover)}`}
+              to={`/player?url=${encodeURIComponent(lastWatched.url)}&seriUrl=${encodeURIComponent(decodedUrl)}&seriJudul=${encodeURIComponent(data.judul_seri)}&judul=${encodeURIComponent(lastWatched.nomorEp ? `Episode ${lastWatched.nomorEp}` : (data.judul_seri || lastWatched.judulSeri))}&gambar=${encodeURIComponent(cover)}`}
               className="px-5 py-2.5 rounded-xl bg-accent hover:bg-accent-hover text-white text-xs font-bold shadow-lg shadow-accent/20 transition-all shrink-0"
             >
               Lanjutkan Nonton
