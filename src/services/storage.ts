@@ -293,6 +293,16 @@ export async function syncHistoryWithCloud(): Promise<WatchHistoryItem[]> {
       }
     }
 
+    // Auto-sync: Push any local items missing or newer to the cloud
+    const remoteUrlMap = new Map(remoteList.map(r => [r.url, r.waktu || 0]));
+    const toUpload = localList.filter(l => {
+      const remoteWaktu = remoteUrlMap.get(l.url);
+      return remoteWaktu === undefined || (l.waktu || 0) > remoteWaktu;
+    });
+    if (toUpload.length > 0) {
+      Promise.all(toUpload.slice(0, 50).map(item => pushHistoryToCloud(item))).catch(() => {});
+    }
+
     const mergedList = Array.from(mergedMap.values())
       .sort((a, b) => (b.waktu || 0) - (a.waktu || 0))
       .slice(0, MAX_HISTORY_ITEMS);
