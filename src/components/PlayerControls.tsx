@@ -34,6 +34,7 @@ interface PlayerControlsProps {
   onToggleMute: () => void;
   onToggleFullscreen: () => void;
   onPlaybackRateChange: (rate: number) => void;
+  onOpenSpeedModal?: () => void;
   onSkipIntro?: () => void;
   onPrev?: () => void;
   onNext?: () => void;
@@ -59,6 +60,7 @@ export default function PlayerControls({
   onToggleMute,
   onToggleFullscreen,
   onPlaybackRateChange,
+  onOpenSpeedModal,
   onSkipIntro,
   onPrev,
   onNext,
@@ -249,9 +251,13 @@ export default function PlayerControls({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  setShowSpeedMenu(!showSpeedMenu);
+                  if (onOpenSpeedModal) {
+                    onOpenSpeedModal();
+                  } else {
+                    setShowSpeedMenu(!showSpeedMenu);
+                  }
                 }}
-                className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white font-mono text-xs font-semibold border border-white/15 transition-all flex items-center gap-0.5"
+                className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white font-mono text-xs font-semibold border border-white/15 transition-all flex items-center gap-0.5 cursor-pointer"
                 title="Kecepatan Putar"
               >
                 <span>{playbackRate}x</span>

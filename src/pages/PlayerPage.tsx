@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import Hls from 'hls.js';
-import { RefreshCw, AlertTriangle, Server, ArrowLeft, X } from 'lucide-react';
+import { RefreshCw, AlertTriangle, Server, ArrowLeft, X, Gauge } from 'lucide-react';
 import { fetchSmartPlay, scrapeVideo, fetchEpisodes, cancelUploads, fetchUploadStatus } from '../services/api';
 import { simpanKeRiwayat, updateProgress, getProgress, syncHistoryWithCloud, formatDuration } from '../services/storage';
 import { ServerItem, EpisodeItem } from '../types';
@@ -34,7 +34,14 @@ export default function PlayerPage() {
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [playbackRate, setPlaybackRate] = useState(1);
+  const [playbackRate, setPlaybackRate] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('wibuflix_playback_speed');
+      return saved ? parseFloat(saved) : 1;
+    } catch {
+      return 1;
+    }
+  });
   const [resumeToast, setResumeToast] = useState<string | null>(null);
 
   const [isTranscoding, setIsTranscoding] = useState(false);
@@ -44,6 +51,7 @@ export default function PlayerPage() {
   const [servers, setServers] = useState<ServerItem[]>([]);
   const [activeServerName, setActiveServerName] = useState('Default Direct');
   const [serverModalOpen, setServerModalOpen] = useState(false);
+  const [speedModalOpen, setSpeedModalOpen] = useState(false);
 
   const [episodes, setEpisodes] = useState<EpisodeItem[]>([]);
   const [navPrev, setNavPrev] = useState<string | null>(null);
@@ -413,6 +421,9 @@ export default function PlayerPage() {
 
   const handlePlaybackRateChange = (rate: number) => {
     setPlaybackRate(rate);
+    try {
+      localStorage.setItem('wibuflix_playback_speed', rate.toString());
+    } catch {}
     if (videoRef.current) {
       videoRef.current.playbackRate = rate;
     }
@@ -681,6 +692,7 @@ export default function PlayerPage() {
               onToggleMute={handleToggleMute}
               onToggleFullscreen={handleToggleFullscreen}
               onPlaybackRateChange={handlePlaybackRateChange}
+              onOpenSpeedModal={() => setSpeedModalOpen(true)}
               onSkipIntro={handleSkipIntro}
               onPrev={() => navPrev && navigateToEpisode(navPrev)}
               onNext={() => navNext && navigateToEpisode(navNext)}
@@ -695,11 +707,22 @@ export default function PlayerPage() {
       <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-surface border border-white/5">
         <div className="flex items-center gap-2">
           <button
+            type="button"
             onClick={() => setServerModalOpen(true)}
             className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-card hover:bg-white/10 text-xs font-semibold text-white border border-white/10 transition-colors"
           >
             <Server className="w-4 h-4 text-accent" />
             <span>Server: {activeServerName}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSpeedModalOpen(true)}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-card hover:bg-white/10 text-xs font-semibold text-white border border-white/10 transition-colors cursor-pointer"
+            title="Ubah Kecepatan Putar"
+          >
+            <Gauge className="w-4 h-4 text-accent" />
+            <span>Kecepatan: {playbackRate}x</span>
           </button>
         </div>
 
@@ -771,6 +794,55 @@ export default function PlayerPage() {
                 </button>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Playback Speed Modal */}
+      {speedModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="relative w-full max-w-sm bg-card rounded-2xl p-6 border border-white/10 shadow-2xl">
+            <button
+              onClick={() => setSpeedModalOpen(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-white"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <h3 className="text-base font-bold text-white mb-1 flex items-center gap-2">
+              <Gauge className="w-5 h-5 text-accent" />
+              <span>Kecepatan Putar</span>
+            </h3>
+            <p className="text-xs text-gray-400 mb-4">Pilih kecepatan pemutaran video</p>
+
+            <div className="space-y-2">
+              {[0.5, 0.75, 1.0, 1.25, 1.5, 2.0].map((speed) => (
+                <button
+                  key={speed}
+                  onClick={() => {
+                    handlePlaybackRateChange(speed);
+                    setSpeedModalOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between p-3 rounded-xl border text-xs font-semibold transition-colors ${
+                    playbackRate === speed
+                      ? 'bg-accent/15 border-accent text-accent'
+                      : 'bg-surface border-white/5 text-gray-300 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <span className="font-mono text-sm">{speed}x {speed === 1.0 ? '(Normal)' : ''}</span>
+                  {playbackRate === speed && (
+                    <span className="w-2.5 h-2.5 rounded-full bg-accent shadow-sm shadow-accent" />
+                  )}
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setSpeedModalOpen(false)}
+              className="w-full mt-4 py-2.5 rounded-xl bg-surface hover:bg-white/10 text-xs font-semibold text-gray-300 hover:text-white border border-white/5 transition-colors"
+            >
+              Tutup
+            </button>
           </div>
         </div>
       )}
