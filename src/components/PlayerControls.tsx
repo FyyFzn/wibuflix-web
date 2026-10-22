@@ -22,6 +22,7 @@ interface PlayerControlsProps {
   volume: number;
   muted: boolean;
   isFullscreen: boolean;
+  playbackRate: number;
   title?: string;
   activeServerName?: string;
   hasPrev?: boolean;
@@ -31,6 +32,7 @@ interface PlayerControlsProps {
   onVolumeChange: (volume: number) => void;
   onToggleMute: () => void;
   onToggleFullscreen: () => void;
+  onPlaybackRateChange: (rate: number) => void;
   onPrev?: () => void;
   onNext?: () => void;
   onOpenServerModal?: () => void;
@@ -44,6 +46,7 @@ export default function PlayerControls({
   volume,
   muted,
   isFullscreen,
+  playbackRate,
   title,
   activeServerName,
   hasPrev,
@@ -53,13 +56,16 @@ export default function PlayerControls({
   onVolumeChange,
   onToggleMute,
   onToggleFullscreen,
+  onPlaybackRateChange,
   onPrev,
   onNext,
   onOpenServerModal,
   onBack,
 }: PlayerControlsProps) {
   const [visible, setVisible] = useState(true);
+  const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const hideTimerRef = useRef<number | null>(null);
+  const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
   const resetHideTimer = () => {
     setVisible(true);
@@ -217,7 +223,47 @@ export default function PlayerControls({
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 relative">
+            {/* Playback Speed Selector */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowSpeedMenu(!showSpeedMenu);
+                }}
+                className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white font-mono text-xs font-semibold border border-white/15 transition-all flex items-center gap-0.5"
+                title="Kecepatan Putar"
+              >
+                <span>{playbackRate}x</span>
+              </button>
+
+              {showSpeedMenu && (
+                <div
+                  className="absolute bottom-full mb-2 right-0 bg-[#181926]/95 border border-white/15 rounded-xl p-1.5 shadow-2xl backdrop-blur-md flex flex-col gap-1 z-50 min-w-[75px]"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {SPEED_OPTIONS.map((rate) => (
+                    <button
+                      key={rate}
+                      type="button"
+                      onClick={() => {
+                        onPlaybackRateChange(rate);
+                        setShowSpeedMenu(false);
+                      }}
+                      className={`px-3 py-1 text-xs rounded-lg text-left transition-colors font-mono font-medium ${
+                        playbackRate === rate
+                          ? 'bg-accent text-white font-bold'
+                          : 'text-gray-300 hover:bg-white/10 hover:text-white'
+                      }`}
+                    >
+                      {rate}x
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <button
               onClick={onToggleFullscreen}
               className="p-1.5 rounded-lg hover:bg-white/10 text-white transition-colors"

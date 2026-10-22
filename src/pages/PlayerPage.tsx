@@ -34,6 +34,7 @@ export default function PlayerPage() {
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState(1);
 
   const [servers, setServers] = useState<ServerItem[]>([]);
   const [activeServerName, setActiveServerName] = useState('Default Direct');
@@ -289,6 +290,13 @@ export default function PlayerPage() {
     }
   };
 
+  const handlePlaybackRateChange = (rate: number) => {
+    setPlaybackRate(rate);
+    if (videoRef.current) {
+      videoRef.current.playbackRate = rate;
+    }
+  };
+
   const handleSelectServer = (server: ServerItem) => {
     setServerModalOpen(false);
     setActiveServerName(server.namaHost || server.nama);
@@ -395,6 +403,7 @@ export default function PlayerPage() {
               volume={volume}
               muted={muted}
               isFullscreen={isFullscreen}
+              playbackRate={playbackRate}
               title={`${seriesTitle} — ${episodeTitle}`}
               activeServerName={activeServerName}
               hasPrev={Boolean(navPrev)}
@@ -404,6 +413,7 @@ export default function PlayerPage() {
               onVolumeChange={handleVolumeChange}
               onToggleMute={handleToggleMute}
               onToggleFullscreen={handleToggleFullscreen}
+              onPlaybackRateChange={handlePlaybackRateChange}
               onPrev={() => navPrev && navigateToEpisode(navPrev)}
               onNext={() => navNext && navigateToEpisode(navNext)}
               onOpenServerModal={() => setServerModalOpen(true)}

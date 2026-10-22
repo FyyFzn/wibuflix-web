@@ -151,6 +151,17 @@ export async function simpanKeRiwayat(
     let riwayat = getRawRiwayat();
     riwayat = riwayat.filter(r => r.url !== url && (seriUrl ? r.seriUrl !== seriUrl : r.judulSeri !== judulSeri));
 
+    // Preserve saved progress if incoming progress is 0
+    let finalProgress = progress;
+    let finalDuration = duration;
+    if (finalProgress === 0) {
+      const existingProg = getProgress(url);
+      if (existingProg && existingProg.progress > 0) {
+        finalProgress = existingProg.progress;
+        finalDuration = existingProg.duration || duration;
+      }
+    }
+
     const newItem: WatchHistoryItem = {
       judulSeri,
       nomorEp,
@@ -158,8 +169,8 @@ export async function simpanKeRiwayat(
       seriUrl,
       gambar,
       waktu: Date.now(),
-      progress,
-      duration,
+      progress: finalProgress,
+      duration: finalDuration,
       host,
       uniqueId
     };
