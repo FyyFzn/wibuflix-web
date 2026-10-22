@@ -182,3 +182,61 @@ export async function queueCancel(id: string): Promise<{ success: boolean }> {
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
+
+export async function queueAdd(
+  episodeUrl: string,
+  seriesUrl?: string,
+  seriesTitle?: string,
+  episodeTitle?: string,
+  uniqueId?: string,
+  cover?: string
+): Promise<{ success: boolean; item?: QueueItem }> {
+  const res = await fetch(`${API_BASE}/api/queue/add`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({
+      episodeUrl,
+      seriesUrl,
+      seriesTitle,
+      episodeTitle,
+      uniqueId,
+      cover
+    })
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+export async function cancelUploads(
+  url?: string,
+  seriesUrl?: string,
+  seriesTitle?: string,
+  uniqueId?: string
+): Promise<void> {
+  try {
+    await fetch(`${API_BASE}/api/cancel-uploads`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ url, seriesUrl, seriesTitle, uniqueId })
+    });
+  } catch {}
+}
+
+export async function fetchUploadStatus(
+  url: string,
+  seriesUrl?: string,
+  seriesTitle?: string,
+  uniqueId?: string
+): Promise<{ success: boolean; progressMessage?: string; status?: string } | null> {
+  try {
+    let endpoint = `${API_BASE}/api/upload-status?url=${encodeURIComponent(url)}`;
+    if (seriesUrl) endpoint += `&seriesUrl=${encodeURIComponent(seriesUrl)}`;
+    if (seriesTitle) endpoint += `&seriesTitle=${encodeURIComponent(seriesTitle)}`;
+    if (uniqueId) endpoint += `&uniqueId=${encodeURIComponent(uniqueId)}`;
+    const res = await fetch(endpoint, { headers: getAuthHeaders() });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}

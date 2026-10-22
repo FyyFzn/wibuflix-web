@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Star, Play, Search, ArrowUpDown, RefreshCw, Film, Clock } from 'lucide-react';
-import { fetchEpisodes } from '../services/api';
+import { Star, Play, Search, ArrowUpDown, RefreshCw, Film, Clock, Cloud, CheckCircle2 } from 'lucide-react';
+import { fetchEpisodes, fetchQueueStatus, queueAdd } from '../services/api';
 import { getRiwayat, formatDuration } from '../services/storage';
 import { EpisodesResponse, EpisodeItem, WatchHistoryItem } from '../types';
 
@@ -17,6 +17,10 @@ export default function DetailPage() {
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [synopsisExpanded, setSynopsisExpanded] = useState(false);
   const [lastWatched, setLastWatched] = useState<WatchHistoryItem | null>(null);
+
+  const [queuedUrls, setQueuedUrls] = useState<Set<string>>(new Set());
+  const [queueLoadingUrls, setQueueLoadingUrls] = useState<Set<string>>(new Set());
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     if (!decodedUrl) return;
@@ -37,6 +41,19 @@ export default function DetailPage() {
   useEffect(() => {
     loadData();
 
+    // Load active queue status
+    fetchQueueStatus()
+      .then((res) => {
+        if (res && res.queue) {
+          const set = new Set<string>();
+          res.queue.forEach((item) => {
+            if (item.episodeUrl) set.add(item.episodeUrl);
+          });
+          setQueuedUrls(set);
+        }
+      })
+      .catch(() => {});
+
     // Check watch history for this series
     const riwayat = getRiwayat();
     const found = riwayat.find(r => r.seriUrl === decodedUrl || (data?.judul_seri && r.judulSeri.toLowerCase() === data.judul_seri.toLowerCase()));
@@ -44,6 +61,33 @@ export default function DetailPage() {
       setLastWatched(found);
     }
   }, [loadData, decodedUrl, data?.judul_seri]);
+
+  const handleQueueEpisode = async (e: React.MouseEvent, epUrl: string, epTitle: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!epUrl || queuedUrls.has(epUrl) || queueLoadingUrls.has(epUrl)) return;
+
+    setQueueLoadingUrls((prev) => new Set(prev).add(epUrl));
+    try {
+      const cover = data?.mal?.cover || data?.cover_scraper || '';
+      const uniqueId = data?.mal?.malId ? `mal-${data.mal.malId}` : undefined;
+      const res = await queueAdd(epUrl, decodedUrl, data?.judul_seri || '', epTitle, uniqueId, cover);
+      if (res && res.success) {
+        setQueuedUrls((prev) => new Set(prev).add(epUrl));
+        setToastMsg(`Berhasil menambahkan ${epTitle} ke antrean cloud!`);
+        setTimeout(() => setToastMsg(null), 3000);
+      }
+    } catch {
+      setToastMsg(`Gagal menambahkan ${epTitle} ke antrean`);
+      setTimeout(() => setToastMsg(null), 3000);
+    } finally {
+      setQueueLoadingUrls((prev) => {
+        const next = new Set(prev);
+        next.delete(epUrl);
+        return next;
+      });
+    }
+  };
 
   const episodes = data?.daftar_episode || [];
   const mal = data?.mal;
@@ -98,6 +142,13 @@ export default function DetailPage() {
 
   return (
     <div className="space-y-10 pb-16">
+      {/* Toast Feedback */}
+      {toastMsg && (
+        <div className="fixed bottom-6 right-6 z-50 px-4 py-2.5 rounded-xl bg-accent text-white text-xs font-semibold shadow-2xl shadow-accent/30 flex items-center gap-2 animate-bounce">
+          <span>{toastMsg}</span>
+        </div>
+      )}
+
       {/* Anime Header Hero */}
       <section className="relative w-full bg-surface border-b border-white/5 overflow-hidden">
         {/* Background Backdrop Blur */}
@@ -281,11 +332,32 @@ export default function DetailPage() {
                       </div>
                     </div>
 
-                    {isWatched && (
-                      <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-accent px-2 py-0.5 rounded-md bg-accent/20">
-                        Ditonton
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {isWatched && (
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-accent px-2 py-0.5 rounded-md bg-accent/20">
+                          Ditonton
+                        </span>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={(e) => handleQueueEpisode(e, epUrl, epTitle)}
+                        title={queuedUrls.has(epUrl) ? 'Sudah dalam antrean cloud' : 'Antrekan ke Cloud HLS'}
+                        className={`p-1.5 rounded-lg transition-colors ${
+                          queuedUrls.has(epUrl)
+                            ? 'text-emerald-400 bg-emerald-500/10'
+                            : 'text-gray-400 hover:text-accent hover:bg-white/10'
+                        }`}
+                      >
+                        {queueLoadingUrls.has(epUrl) ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-accent" />
+                        ) : queuedUrls.has(epUrl) ? (
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                        ) : (
+                          <Cloud className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                    </div>
                   </Link>
                 );
               })}

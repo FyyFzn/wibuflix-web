@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import Hls from 'hls.js';
 import { RefreshCw, AlertTriangle, Server, ArrowLeft, X } from 'lucide-react';
-import { fetchSmartPlay, scrapeVideo, fetchEpisodes } from '../services/api';
+import { fetchSmartPlay, scrapeVideo, fetchEpisodes, cancelUploads, fetchUploadStatus } from '../services/api';
 import { simpanKeRiwayat, updateProgress, getProgress, syncHistoryWithCloud, formatDuration } from '../services/storage';
 import { ServerItem, EpisodeItem } from '../types';
 import PlayerControls from '../components/PlayerControls';
@@ -36,6 +36,10 @@ export default function PlayerPage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [resumeToast, setResumeToast] = useState<string | null>(null);
+
+  const [isTranscoding, setIsTranscoding] = useState(false);
+  const [uploadProgressMsg, setUploadProgressMsg] = useState<string | null>(null);
+  const prefetchDoneRef = useRef<string | null>(null);
 
   const [servers, setServers] = useState<ServerItem[]>([]);
   const [activeServerName, setActiveServerName] = useState('Default Direct');
@@ -138,9 +142,36 @@ export default function PlayerPage() {
         }
       }
 
-      // If smartPlay was still transcoding
+      // If smartPlay was still transcoding, start polling
       if (smartPlay && smartPlay.status === 'UPLOADING') {
-        setError(`Sedang transcoding ke HLS (${smartPlay.progress || 0}%). Silakan tunggu sebentar atau coba server lain.`);
+        setIsTranscoding(true);
+        setUploadProgressMsg(smartPlay.message || `Sedang transcoding ke HLS (${smartPlay.progress || 0}%)...`);
+
+        let pollCount = 0;
+        const pollInterval = setInterval(async () => {
+          pollCount++;
+          if (pollCount > 40) {
+            clearInterval(pollInterval);
+            setIsTranscoding(false);
+            setError('Transcoding memerlukan waktu lebih lama. Silakan pantau di Antrean atau gunakan server cadangan.');
+            return;
+          }
+          try {
+            const statusRes = await fetchUploadStatus(episodeUrl, seriesUrl, seriesTitle, uniqueId);
+            if (statusRes?.progressMessage) {
+              setUploadProgressMsg(statusRes.progressMessage);
+            }
+            const recheck = await fetchSmartPlay(episodeUrl, seriesUrl, undefined, undefined, seriesTitle, episodeTitle, uniqueId);
+            if (recheck?.status === 'READY' && recheck.url) {
+              clearInterval(pollInterval);
+              setIsTranscoding(false);
+              setVideoSrc(recheck.url);
+              setPlayerMode('hls');
+              setActiveServerName('Azure Direct HLS');
+              setLoading(false);
+            }
+          } catch {}
+        }, 2500);
       } else {
         setError('Video stream belum tersedia untuk episode ini. Silakan pilih server alternatif.');
       }
@@ -316,6 +347,29 @@ export default function PlayerPage() {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [saveCurrentProgress]);
+
+  // Background Stream Prefetch: Prefetch next episode while watching current
+  useEffect(() => {
+    if (playing && navNext && prefetchDoneRef.current !== navNext) {
+      prefetchDoneRef.current = navNext;
+      fetchSmartPlay(
+        navNext,
+        seriesUrl,
+        undefined,
+        undefined,
+        seriesTitle,
+        'Next Episode',
+        uniqueId
+      ).catch(() => {});
+    }
+  }, [playing, navNext, seriesUrl, seriesTitle, uniqueId]);
+
+  // Cancel any active background uploads when exiting the player
+  useEffect(() => {
+    return () => {
+      cancelUploads(episodeUrl, seriesUrl, seriesTitle, uniqueId);
+    };
+  }, [episodeUrl, seriesUrl, seriesTitle, uniqueId]);
 
   // Player controls handlers
   const handlePlayPause = () => {
@@ -534,10 +588,31 @@ export default function PlayerPage() {
           </div>
         )}
 
-        {loading ? (
-          <div className="flex flex-col items-center justify-center gap-3">
+        {loading || isTranscoding ? (
+          <div className="flex flex-col items-center justify-center gap-3 p-6 max-w-sm text-center">
             <RefreshCw className="w-8 h-8 text-accent animate-spin" />
-            <p className="text-xs text-gray-400">Mempersiapkan pemutar video...</p>
+            <p className="text-xs text-white font-medium">
+              {uploadProgressMsg || 'Mempersiapkan pemutar video...'}
+            </p>
+            {isTranscoding && (
+              <div className="flex items-center gap-2 mt-2">
+                <Link
+                  to="/queue"
+                  className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-gray-200 transition-colors"
+                >
+                  Lihat Antrean Cloud
+                </Link>
+                {servers.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setServerModalOpen(true)}
+                    className="px-3 py-1.5 rounded-xl bg-accent hover:bg-accent-hover text-xs font-semibold text-white transition-colors"
+                  >
+                    Server Cadangan
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         ) : error && playerMode === 'none' ? (
           <div className="max-w-md p-6 text-center space-y-4">
