@@ -10,6 +10,7 @@ import {
   VolumeX,
   SkipBack,
   SkipForward,
+  FastForward,
   Server,
   ArrowLeft
 } from 'lucide-react';
@@ -33,6 +34,7 @@ interface PlayerControlsProps {
   onToggleMute: () => void;
   onToggleFullscreen: () => void;
   onPlaybackRateChange: (rate: number) => void;
+  onSkipIntro?: () => void;
   onPrev?: () => void;
   onNext?: () => void;
   onOpenServerModal?: () => void;
@@ -57,6 +59,7 @@ export default function PlayerControls({
   onToggleMute,
   onToggleFullscreen,
   onPlaybackRateChange,
+  onSkipIntro,
   onPrev,
   onNext,
   onOpenServerModal,
@@ -179,6 +182,22 @@ export default function PlayerControls({
 
       {/* Bottom Controls & Timeline */}
       <div className="space-y-2">
+        {/* Skip Intro Floating Action */}
+        {currentTime < 120 && onSkipIntro && (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={onSkipIntro}
+              className="px-3.5 py-1.5 rounded-xl bg-black/70 hover:bg-black/90 text-white font-medium text-xs backdrop-blur-md border border-white/20 shadow-lg hover:border-accent transition-all flex items-center gap-1.5 group cursor-pointer"
+              title="Lewati Intro (+85s) - Tombol [S]"
+            >
+              <FastForward className="w-3.5 h-3.5 text-accent group-hover:scale-110 transition-transform" />
+              <span>Lewati Intro (+85 detik)</span>
+              <kbd className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded font-mono text-gray-300">S</kbd>
+            </button>
+          </div>
+        )}
+
         {/* Seek Bar */}
         <div className="relative group/bar flex items-center h-4 cursor-pointer">
           <input

@@ -2,9 +2,9 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import Hls from 'hls.js';
 import { RefreshCw, AlertTriangle, Server, ArrowLeft, X } from 'lucide-react';
-import { fetchSmartPlay, scrapeVideo } from '../services/api';
-import { simpanKeRiwayat, updateProgress, getProgress } from '../services/storage';
-import { ServerItem } from '../types';
+import { fetchSmartPlay, scrapeVideo, fetchEpisodes } from '../services/api';
+import { simpanKeRiwayat, updateProgress, getProgress, syncHistoryWithCloud, formatDuration } from '../services/storage';
+import { ServerItem, EpisodeItem } from '../types';
 import PlayerControls from '../components/PlayerControls';
 
 export default function PlayerPage() {
@@ -35,11 +35,13 @@ export default function PlayerPage() {
   const [muted, setMuted] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
+  const [resumeToast, setResumeToast] = useState<string | null>(null);
 
   const [servers, setServers] = useState<ServerItem[]>([]);
   const [activeServerName, setActiveServerName] = useState('Default Direct');
   const [serverModalOpen, setServerModalOpen] = useState(false);
 
+  const [episodes, setEpisodes] = useState<EpisodeItem[]>([]);
   const [navPrev, setNavPrev] = useState<string | null>(null);
   const [navNext, setNavNext] = useState<string | null>(null);
 
@@ -64,14 +66,20 @@ export default function PlayerPage() {
     destroyHls();
     initialSeekDone.current = false;
 
-    // Save initial watch state to local history immediately
+    // 1. Sync latest watch history with cloud first so we have accurate progress
+    await syncHistoryWithCloud().catch(() => {});
+    const existingProg = getProgress(episodeUrl);
+    const initialProgress = existingProg?.progress || 0;
+    const initialDuration = existingProg?.duration || 0;
+
+    // Save initial watch state to local history immediately preserving progress
     simpanKeRiwayat(
       episodeTitle,
       episodeUrl,
       seriesUrl,
       coverImage,
-      0,
-      0,
+      initialProgress,
+      initialDuration,
       'Azure Cloud',
       seriesTitle,
       uniqueId
@@ -150,6 +158,46 @@ export default function PlayerPage() {
     };
   }, [loadStream]);
 
+  // Fetch episodes of series to ensure next/prev navigation works
+  useEffect(() => {
+    if (!seriesUrl) return;
+    fetchEpisodes(seriesUrl)
+      .then((res) => {
+        if (res.status === 'success' && res.data?.daftar_episode) {
+          setEpisodes(res.data.daftar_episode);
+        }
+      })
+      .catch(() => {});
+  }, [seriesUrl]);
+
+  // Automatically resolve navPrev and navNext from episodes list
+  useEffect(() => {
+    if (!episodes.length || !episodeUrl) return;
+    const cleanUrl = (u: string) => decodeURIComponent(u).replace(/\/$/, '');
+    const currentNorm = cleanUrl(episodeUrl);
+
+    const idx = episodes.findIndex((ep) => {
+      const urlsToCheck = [ep.url, ...(Object.values(ep.urls || {}))].filter(Boolean) as string[];
+      return urlsToCheck.some((u) => cleanUrl(u) === currentNorm);
+    });
+
+    if (idx !== -1) {
+      const firstNum = parseFloat(episodes[0].judul?.match(/(?:episode|eps|ova)\s*(\d+(?:\.\d+)?)/i)?.[1] || '1');
+      const lastNum = parseFloat(episodes[episodes.length - 1].judul?.match(/(?:episode|eps|ova)\s*(\d+(?:\.\d+)?)/i)?.[1] || '2');
+      const isAsc = firstNum < lastNum;
+
+      const nextEp = isAsc ? episodes[idx + 1] : episodes[idx - 1];
+      const prevEp = isAsc ? episodes[idx - 1] : episodes[idx + 1];
+
+      if (nextEp) {
+        setNavNext(nextEp.url || Object.values(nextEp.urls || {})[0] || null);
+      }
+      if (prevEp) {
+        setNavPrev(prevEp.url || Object.values(prevEp.urls || {})[0] || null);
+      }
+    }
+  }, [episodes, episodeUrl]);
+
   // Attach HLS or native video when videoSrc changes
   useEffect(() => {
     if (playerMode !== 'hls' || !videoSrc || !videoRef.current) return;
@@ -160,13 +208,20 @@ export default function PlayerPage() {
     const resumeInfo = getProgress(episodeUrl);
     const startProgress = resumeInfo?.progress || 0;
 
-    const onMediaAttached = () => {
-      if (!initialSeekDone.current && startProgress > 5) {
+    const performSeek = () => {
+      if (!initialSeekDone.current && startProgress > 5 && video) {
         video.currentTime = startProgress;
         initialSeekDone.current = true;
+        setResumeToast(`Melanjutkan dari ${formatDuration(startProgress)}`);
+        setTimeout(() => setResumeToast(null), 3500);
       }
-      video.play().catch(() => {});
+      if (video) {
+        video.playbackRate = playbackRate;
+      }
     };
+
+    video.addEventListener('loadedmetadata', performSeek, { once: true });
+    video.addEventListener('canplay', performSeek, { once: true });
 
     if (Hls.isSupported()) {
       const hls = new Hls({
@@ -179,7 +234,19 @@ export default function PlayerPage() {
       hls.attachMedia(video);
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        onMediaAttached();
+        performSeek();
+        video.play().catch(() => {});
+        // Fallback retry after 1.2s to ensure the position holds after buffering
+        setTimeout(() => {
+          if (startProgress > 5 && video.currentTime < startProgress - 3) {
+            video.currentTime = startProgress;
+            if (!initialSeekDone.current) {
+              initialSeekDone.current = true;
+              setResumeToast(`Melanjutkan dari ${formatDuration(startProgress)}`);
+              setTimeout(() => setResumeToast(null), 3500);
+            }
+          }
+        }, 1200);
       });
 
       hls.on(Hls.Events.ERROR, (_event, data) => {
@@ -201,7 +268,7 @@ export default function PlayerPage() {
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       // Native Safari HLS
       video.src = videoSrc;
-      video.addEventListener('loadedmetadata', onMediaAttached, { once: true });
+      video.addEventListener('loadedmetadata', performSeek, { once: true });
     } else {
       video.src = videoSrc;
     }
@@ -209,7 +276,7 @@ export default function PlayerPage() {
     return () => {
       destroyHls();
     };
-  }, [playerMode, videoSrc, episodeUrl]);
+  }, [playerMode, videoSrc, episodeUrl, playbackRate]);
 
   // Periodic watch progress persistence (every 5 seconds)
   useEffect(() => {
@@ -297,6 +364,132 @@ export default function PlayerPage() {
     }
   };
 
+  const handleSkipIntro = () => {
+    if (!videoRef.current) return;
+    const newTime = Math.min(duration || 99999, videoRef.current.currentTime + 85);
+    handleSeek(newTime);
+  };
+
+  const navigateToEpisode = (targetUrl: string) => {
+    saveCurrentProgress();
+    navigate(
+      `/player?url=${encodeURIComponent(targetUrl)}&seriUrl=${encodeURIComponent(seriesUrl)}&seriJudul=${encodeURIComponent(seriesTitle)}&gambar=${encodeURIComponent(coverImage)}&uniqueId=${encodeURIComponent(uniqueId)}`
+    );
+  };
+
+  // Keyboard Hotkeys
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || (e.target as HTMLElement)?.isContentEditable) {
+        return;
+      }
+
+      switch (e.key) {
+        case ' ':
+        case 'k':
+        case 'K':
+          e.preventDefault();
+          handlePlayPause();
+          break;
+        case 'ArrowRight':
+        case 'l':
+        case 'L':
+          e.preventDefault();
+          if (videoRef.current) {
+            handleSeek(Math.min(duration || 99999, (videoRef.current.currentTime || 0) + 10));
+          }
+          break;
+        case 'ArrowLeft':
+        case 'j':
+        case 'J':
+          e.preventDefault();
+          if (videoRef.current) {
+            handleSeek(Math.max(0, (videoRef.current.currentTime || 0) - 10));
+          }
+          break;
+        case 's':
+        case 'S':
+          e.preventDefault();
+          handleSkipIntro();
+          break;
+        case 'f':
+        case 'F':
+          e.preventDefault();
+          handleToggleFullscreen();
+          break;
+        case 'm':
+        case 'M':
+          e.preventDefault();
+          handleToggleMute();
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          handleVolumeChange(Math.min(1, volume + 0.1));
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          handleVolumeChange(Math.max(0, volume - 0.1));
+          break;
+        case 'n':
+        case 'N':
+          if (navNext) {
+            e.preventDefault();
+            navigateToEpisode(navNext);
+          }
+          break;
+        case 'p':
+        case 'P':
+          if (navPrev) {
+            e.preventDefault();
+            navigateToEpisode(navPrev);
+          }
+          break;
+        case '>': {
+          e.preventDefault();
+          const SPEED_OPTS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+          const currIdx = SPEED_OPTS.indexOf(playbackRate);
+          if (currIdx !== -1 && currIdx < SPEED_OPTS.length - 1) {
+            handlePlaybackRateChange(SPEED_OPTS[currIdx + 1]);
+          }
+          break;
+        }
+        case '<': {
+          e.preventDefault();
+          const SPEED_OPTS_DEC = [0.5, 0.75, 1, 1.25, 1.5, 2];
+          const decIdx = SPEED_OPTS_DEC.indexOf(playbackRate);
+          if (decIdx > 0) {
+            handlePlaybackRateChange(SPEED_OPTS_DEC[decIdx - 1]);
+          }
+          break;
+        }
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [
+    playing,
+    duration,
+    volume,
+    muted,
+    playbackRate,
+    navNext,
+    navPrev,
+    handlePlayPause,
+    handleSeek,
+    handleSkipIntro,
+    handleToggleFullscreen,
+    handleToggleMute,
+    handleVolumeChange,
+    handlePlaybackRateChange,
+    navigateToEpisode
+  ]);
+
   const handleSelectServer = (server: ServerItem) => {
     setServerModalOpen(false);
     setActiveServerName(server.namaHost || server.nama);
@@ -310,13 +503,6 @@ export default function PlayerPage() {
       // Direct stream
       loadStream();
     }
-  };
-
-  const navigateToEpisode = (targetUrl: string) => {
-    saveCurrentProgress();
-    navigate(
-      `/player?url=${encodeURIComponent(targetUrl)}&seriUrl=${encodeURIComponent(seriesUrl)}&seriJudul=${encodeURIComponent(seriesTitle)}&gambar=${encodeURIComponent(coverImage)}&uniqueId=${encodeURIComponent(uniqueId)}`
-    );
   };
 
   return (
@@ -342,6 +528,12 @@ export default function PlayerPage() {
         ref={containerRef}
         className="relative w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl border border-white/10 flex items-center justify-center group"
       >
+        {resumeToast && (
+          <div className="absolute top-4 left-4 z-40 px-3.5 py-1.5 rounded-full bg-accent text-white text-xs font-semibold shadow-2xl flex items-center gap-1.5 transition-all">
+            <span>{resumeToast}</span>
+          </div>
+        )}
+
         {loading ? (
           <div className="flex flex-col items-center justify-center gap-3">
             <RefreshCw className="w-8 h-8 text-accent animate-spin" />
@@ -414,6 +606,7 @@ export default function PlayerPage() {
               onToggleMute={handleToggleMute}
               onToggleFullscreen={handleToggleFullscreen}
               onPlaybackRateChange={handlePlaybackRateChange}
+              onSkipIntro={handleSkipIntro}
               onPrev={() => navPrev && navigateToEpisode(navPrev)}
               onNext={() => navNext && navigateToEpisode(navNext)}
               onOpenServerModal={() => setServerModalOpen(true)}
