@@ -13,7 +13,8 @@ import {
   FastForward,
   Server,
   ArrowLeft,
-  Gauge
+  Gauge,
+  Sparkles
 } from 'lucide-react';
 import { formatDuration } from '../services/storage';
 
@@ -29,6 +30,10 @@ interface PlayerControlsProps {
   activeServerName?: string;
   hasPrev?: boolean;
   hasNext?: boolean;
+  isUpscalingActive?: boolean;
+  is1080pNative?: boolean;
+  upscalerEnabled?: boolean;
+  onToggleUpscaler?: () => void;
   onPlayPause: () => void;
   onSeek: (time: number) => void;
   onVolumeChange: (volume: number) => void;
@@ -55,6 +60,10 @@ export default function PlayerControls({
   activeServerName,
   hasPrev,
   hasNext,
+  isUpscalingActive,
+  is1080pNative,
+  upscalerEnabled,
+  onToggleUpscaler,
   onPlayPause,
   onSeek,
   onVolumeChange,
@@ -121,6 +130,42 @@ export default function PlayerControls({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* AI Upscaler Badge & Toggle */}
+          {onToggleUpscaler && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleUpscaler();
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold backdrop-blur-md border transition-all cursor-pointer ${
+                is1080pNative
+                  ? 'bg-blue-500/20 border-blue-400/30 text-blue-300 cursor-default'
+                  : isUpscalingActive
+                  ? 'bg-accent/25 border-accent text-accent shadow-lg shadow-accent/20 animate-pulse'
+                  : 'bg-black/40 hover:bg-black/60 border-white/10 text-gray-400'
+              }`}
+              title={
+                is1080pNative
+                  ? 'Resolusi stream asli 1080p (Native)'
+                  : isUpscalingActive
+                  ? 'Anime4K WebGL2 1080p AI Upscaling Aktif'
+                  : 'Klik untuk mengaktifkan AI Upscaling (Anime4K)'
+              }
+            >
+              <Sparkles className={`w-3.5 h-3.5 ${isUpscalingActive ? 'text-accent' : is1080pNative ? 'text-blue-300' : 'text-gray-400'}`} />
+              <span>
+                {is1080pNative
+                  ? '1080p Native'
+                  : isUpscalingActive
+                  ? '1080p AI'
+                  : upscalerEnabled
+                  ? 'AI Siap'
+                  : 'Standard'}
+              </span>
+            </button>
+          )}
+
           {/* Top-Right Speed Button (Matches Mobile App layout) */}
           <button
             type="button"

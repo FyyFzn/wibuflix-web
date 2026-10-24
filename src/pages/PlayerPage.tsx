@@ -6,6 +6,7 @@ import { fetchSmartPlay, scrapeVideo, fetchEpisodes, cancelUploads, fetchUploadS
 import { simpanKeRiwayat, updateProgress, getProgress, syncHistoryWithCloud, formatDuration } from '../services/storage';
 import { ServerItem, EpisodeItem } from '../types';
 import PlayerControls from '../components/PlayerControls';
+import { useAnime4kUpscaler } from '../hooks/useAnime4kUpscaler';
 
 export default function PlayerPage() {
   const [searchParams] = useSearchParams();
@@ -26,6 +27,7 @@ export default function PlayerPage() {
   }, [searchParams]);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
 
@@ -34,6 +36,31 @@ export default function PlayerPage() {
   const [playerMode, setPlayerMode] = useState<'hls' | 'iframe' | 'none'>('none');
   const [videoSrc, setVideoSrc] = useState<string>('');
   const [iframeSrc, setIframeSrc] = useState<string>('');
+
+  const [upscalerEnabled, setUpscalerEnabled] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('wibuflix_anime4k_enabled');
+      return saved !== null ? saved === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const { isUpscalingActive, is1080pNative } = useAnime4kUpscaler({
+    videoRef,
+    canvasRef,
+    enabled: upscalerEnabled && playerMode === 'hls'
+  });
+
+  const toggleUpscaler = useCallback(() => {
+    setUpscalerEnabled(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('wibuflix_anime4k_enabled', String(next));
+      } catch {}
+      return next;
+    });
+  }, []);
 
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -678,7 +705,8 @@ export default function PlayerPage() {
             <video
               ref={videoRef}
               playsInline
-              className="w-full h-full object-contain"
+              crossOrigin="anonymous"
+              className={`w-full h-full object-contain ${isUpscalingActive ? 'hidden' : 'block'}`}
               onTimeUpdate={() => {
                 if (videoRef.current) setCurrentTime(videoRef.current.currentTime);
               }}
@@ -697,6 +725,11 @@ export default function PlayerPage() {
               }}
             />
 
+            <canvas
+              ref={canvasRef}
+              className={`w-full h-full object-contain ${isUpscalingActive ? 'block' : 'hidden'}`}
+            />
+
             {/* Custom Overlay Controls */}
             <PlayerControls
               playing={playing}
@@ -710,6 +743,10 @@ export default function PlayerPage() {
               activeServerName={activeServerName}
               hasPrev={Boolean(navPrev)}
               hasNext={Boolean(navNext)}
+              isUpscalingActive={isUpscalingActive}
+              is1080pNative={is1080pNative}
+              upscalerEnabled={upscalerEnabled}
+              onToggleUpscaler={toggleUpscaler}
               onPlayPause={handlePlayPause}
               onSeek={handleSeek}
               onVolumeChange={handleVolumeChange}
