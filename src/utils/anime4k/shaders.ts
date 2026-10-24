@@ -1,4 +1,4 @@
-// GLSL Shaders for Anime4K WebGL2 Pipeline (Mode A: Fast Restore & Upscale)
+// GLSL Shaders for Anime4K WebGL2 Pipeline (Mode A: Fast Line Thinning & Upscale)
 
 export const VERTEX_SHADER = `#version 300 es
 precision highp float;
@@ -12,7 +12,7 @@ void main() {
 }
 `;
 
-// Pass 1: Thin lines & Restore gradient edges (Anime4K Mode A Restore)
+// Pass 1: Line Thinning & Deblur (Restores crisp anime contour lines without ghosting)
 export const RESTORE_FRAGMENT_SHADER = `#version 300 es
 precision highp float;
 
@@ -40,6 +40,7 @@ void main() {
   vec4 bc = texture(u_texture, v_texCoord + vec2(0.0, d.y));
   vec4 br = texture(u_texture, v_texCoord + vec2(d.x, d.y));
 
+  float l_cc = getLuma(cc);
   float l_tl = getLuma(tl);
   float l_tc = getLuma(tc);
   float l_tr = getLuma(tr);
@@ -49,27 +50,28 @@ void main() {
   float l_bc = getLuma(bc);
   float l_br = getLuma(br);
 
-  float gx = (l_tr + 2.0 * l_mr + l_br) - (l_tl + 2.0 * l_ml + l_bl);
-  float gy = (l_bl + 2.0 * l_bc + l_br) - (l_tl + 2.0 * l_tc + l_tr);
-  vec2 grad = vec2(gx, gy);
-  float gradLen = length(grad);
+  float minLuma = min(l_cc, min(min(min(l_tl, l_tc), min(l_tr, l_ml)), min(min(l_mr, l_bl), min(l_bc, l_br))));
+  float maxLuma = max(l_cc, max(max(max(l_tl, l_tc), max(l_tr, l_ml)), max(max(l_mr, l_bl), max(l_bc, l_br))));
+  float delta = maxLuma - minLuma;
 
-  if (gradLen > 0.02) {
-    vec2 norm = grad / gradLen;
-    // Push sampling coordinates towards the edge boundary (Anime4K gradient push)
-    vec2 pushedCoord = v_texCoord - norm * d * 0.85;
-    vec4 pushedColor = texture(u_texture, pushedCoord);
+  // Thin out blurry line transitions by pushing luminance towards edge extrema
+  if (delta > 0.05) {
+    float t = clamp((l_cc - minLuma) / delta, 0.0, 1.0);
+    // Smoothstep S-curve: values < 0.5 pulled darker (thin line), > 0.5 pulled brighter (clean fill)
+    float pushedT = t * t * (3.0 - 2.0 * t);
+    float targetLuma = minLuma + pushedT * delta;
     
-    // Adaptive edge blend: sharpen line art, preserve smooth flat anime fills
-    float edgeFactor = clamp(gradLen * 3.0, 0.0, 0.9);
-    fragColor = mix(cc, pushedColor, edgeFactor);
+    // Adjust color luminance while strictly preserving chroma/hue
+    float lumaRatio = targetLuma / max(l_cc, 0.001);
+    vec3 adjusted = clamp(cc.rgb * mix(1.0, lumaRatio, 0.70), 0.0, 1.0);
+    fragColor = vec4(adjusted, cc.a);
   } else {
     fragColor = cc;
   }
 }
 `;
 
-// Pass 2: Upscale 2x & Contrast-Adaptive Sharpening (Catmull-Rom Bicubic + CAS)
+// Pass 2: 1080p Upscale with Contrast-Adaptive Sharpening (CAS) and Anti-Ringing
 export const UPSCALE_FRAGMENT_SHADER = `#version 300 es
 precision highp float;
 
@@ -83,64 +85,48 @@ float getLuma(vec3 c) {
   return dot(c, vec3(0.299, 0.587, 0.114));
 }
 
-// 4-tap Catmull-Rom high-fidelity bicubic filter (removes bilinear blur)
-vec4 sampleCatmullRom(sampler2D tex, vec2 uv, vec2 texSize) {
-  vec2 samplePos = uv * texSize;
-  vec2 tc = floor(samplePos - 0.5) + 0.5;
-  vec2 f = samplePos - tc;
-  vec2 f2 = f * f;
-  vec2 f3 = f2 * f;
-
-  vec2 w0 = f2 - 0.5 * (f3 + f);
-  vec2 w1 = 1.5 * f3 - 2.5 * f2 + 1.0;
-  vec2 w3 = 0.5 * (f3 - f2);
-  vec2 w2 = 1.0 - w0 - w1 - w3;
-
-  vec2 s0 = w0 + w1;
-  vec2 s1 = w2 + w3;
-
-  vec2 f0 = w1 / (w0 + w1);
-  vec2 f1 = w3 / (w2 + w3);
-
-  vec2 t0 = tc - 1.0 + f0;
-  vec2 t1 = tc + 1.0 + f1;
-
-  return (s0.x * s0.y) * texture(tex, vec2(t0.x, t0.y) / texSize) +
-         (s1.x * s0.y) * texture(tex, vec2(t1.x, t0.y) / texSize) +
-         (s0.x * s1.y) * texture(tex, vec2(t0.x, t1.y) / texSize) +
-         (s1.x * s1.y) * texture(tex, vec2(t1.x, t1.y) / texSize);
-}
-
 void main() {
   vec2 d = 1.0 / u_texSize;
 
-  // 1. Catmull-Rom bicubic upscale from intermediate texture
-  vec4 color = sampleCatmullRom(u_texture, v_texCoord, u_texSize);
+  // Sample center and cross neighbors
+  vec4 c = texture(u_texture, v_texCoord);
+  vec4 t = texture(u_texture, v_texCoord - vec2(0.0, d.y));
+  vec4 b = texture(u_texture, v_texCoord + vec2(0.0, d.y));
+  vec4 l = texture(u_texture, v_texCoord - vec2(d.x, 0.0));
+  vec4 r = texture(u_texture, v_texCoord + vec2(d.x, 0.0));
 
-  // 2. Contrast-Adaptive Sharpening (CAS / Anime4K line boost)
-  vec4 top = texture(u_texture, v_texCoord - vec2(0.0, d.y * 0.75));
-  vec4 btm = texture(u_texture, v_texCoord + vec2(0.0, d.y * 0.75));
-  vec4 lft = texture(u_texture, v_texCoord - vec2(d.x * 0.75, 0.0));
-  vec4 rgt = texture(u_texture, v_texCoord + vec2(d.x * 0.75, 0.0));
+  // Diagonal samples for 9-tap edge reconstruction
+  vec4 tl = texture(u_texture, v_texCoord + vec2(-d.x, -d.y));
+  vec4 tr = texture(u_texture, v_texCoord + vec2(d.x, -d.y));
+  vec4 bl = texture(u_texture, v_texCoord + vec2(-d.x, d.y));
+  vec4 br = texture(u_texture, v_texCoord + vec2(d.x, d.y));
 
-  float lumaC = getLuma(color.rgb);
-  float lumaT = getLuma(top.rgb);
-  float lumaB = getLuma(btm.rgb);
-  float lumaL = getLuma(lft.rgb);
-  float lumaR = getLuma(rgt.rgb);
+  float lc = getLuma(c.rgb);
+  float lt = getLuma(t.rgb);
+  float lb = getLuma(b.rgb);
+  float ll = getLuma(l.rgb);
+  float lr = getLuma(r.rgb);
 
-  float minLuma = min(lumaC, min(min(lumaT, lumaB), min(lumaL, lumaR)));
-  float maxLuma = max(lumaC, max(max(lumaT, lumaB), max(lumaL, lumaR)));
-
+  // Local min & max contrast
+  float minLuma = min(lc, min(min(lt, lb), min(ll, lr)));
+  float maxLuma = max(lc, max(max(lt, lb), max(ll, lr)));
   float contrast = maxLuma - minLuma;
-  if (contrast > 0.02) {
-    float peakWeight = clamp(min(minLuma, 1.0 - maxLuma) / max(contrast, 0.001), 0.0, 1.0);
-    float sharpAmount = -0.40 * peakWeight;
 
-    vec4 filtered = (color + (top + btm + lft + rgt) * sharpAmount) / (1.0 + 4.0 * sharpAmount);
-    fragColor = clamp(filtered, 0.0, 1.0);
+  // High-pass unsharp sharpening with anti-ringing clamp
+  if (contrast > 0.02) {
+    vec4 crossAvg = (t + b + l + r) * 0.25;
+    vec4 diagAvg = (tl + tr + bl + br) * 0.25;
+    vec4 localBlur = mix(crossAvg, diagAvg, 0.35);
+
+    // High frequency boost (0.95 for sharp anime line art)
+    vec4 sharp = c + (c - localBlur) * 0.95;
+
+    // Anti-ringing clamp: enforce output strictly inside local color bounds
+    vec4 minColor = min(c, min(min(t, b), min(l, r)));
+    vec4 maxColor = max(c, max(max(t, b), max(l, r)));
+    fragColor = clamp(sharp, minColor, maxColor);
   } else {
-    fragColor = clamp(color, 0.0, 1.0);
+    fragColor = c;
   }
 }
 `;
