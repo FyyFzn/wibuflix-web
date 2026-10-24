@@ -102,10 +102,12 @@ export class Anime4kPipeline {
 
     this.updateTexturesAndFbos(inWidth, inHeight);
 
-    // 1. Upload video frame to videoTexture
+    // 1. Upload video frame to videoTexture (flip Y so top of video matches WebGL texture coordinate standard)
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.videoTexture);
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, video);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
 
     gl.bindVertexArray(this.quadVao);
 

@@ -113,6 +113,8 @@ export function useAnime4kUpscaler({ videoRef, canvasRef, enabled }: UseAnime4kU
     };
 
     video.addEventListener('loadedmetadata', handleLoadedMetadata);
+    video.addEventListener('resize', handleLoadedMetadata);
+    video.addEventListener('canplay', handleLoadedMetadata);
     video.addEventListener('play', () => {
       if (isUpscalingActive) startLoop();
     });
@@ -126,6 +128,8 @@ export function useAnime4kUpscaler({ videoRef, canvasRef, enabled }: UseAnime4kU
     return () => {
       stopLoop();
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      video.removeEventListener('resize', handleLoadedMetadata);
+      video.removeEventListener('canplay', handleLoadedMetadata);
       video.removeEventListener('pause', stopLoop);
       video.removeEventListener('ended', stopLoop);
     };
