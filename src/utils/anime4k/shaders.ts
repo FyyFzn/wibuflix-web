@@ -12,6 +12,37 @@ void main() {
 }
 `;
 
+// Pass 0: Clamp Highlights / De-Ringing
+// Clamps overshoot highlights to neighbor max to prevent ringing artifacts
+export const CLAMP_HIGHLIGHTS_FRAGMENT_SHADER = `#version 300 es
+precision highp float;
+
+uniform sampler2D u_texture;
+uniform vec2 u_texSize;
+
+in vec2 v_texCoord;
+out vec4 fragColor;
+
+void main() {
+  vec2 d = 1.0 / u_texSize;
+  vec4 cc = texture(u_texture, v_texCoord);
+
+  vec4 t  = texture(u_texture, v_texCoord - vec2(0.0, d.y));
+  vec4 b  = texture(u_texture, v_texCoord + vec2(0.0, d.y));
+  vec4 l  = texture(u_texture, v_texCoord - vec2(d.x, 0.0));
+  vec4 r  = texture(u_texture, v_texCoord + vec2(d.x, 0.0));
+
+  vec4 tl = texture(u_texture, v_texCoord + vec2(-d.x, -d.y));
+  vec4 tr = texture(u_texture, v_texCoord + vec2(d.x, -d.y));
+  vec4 bl = texture(u_texture, v_texCoord + vec2(-d.x, d.y));
+  vec4 br = texture(u_texture, v_texCoord + vec2(d.x, d.y));
+
+  vec4 maxNeighbor = max(max(max(t, b), max(l, r)), max(max(tl, tr), max(bl, br)));
+
+  fragColor = vec4(min(cc.rgb, maxNeighbor.rgb), 1.0);
+}
+`;
+
 // Pass 1: Anime4K Push Color / Thin Lines (bloc97 algorithm)
 // Detects blurry gradients along edges and pushes color to thin out lines and sharpen contours
 export const RESTORE_FRAGMENT_SHADER = `#version 300 es
@@ -116,7 +147,7 @@ void main() {
 }
 `;
 
-// Pass 2: 1080p High-Pass Unsharp & Contrast Sharpening
+// Pass 2: Luminance-Adaptive Unsharp & Contrast Sharpening
 export const UPSCALE_FRAGMENT_SHADER = `#version 300 es
 precision highp float;
 
@@ -140,18 +171,24 @@ void main() {
   vec4 bl = texture(u_texture, v_texCoord + vec2(-d.x, d.y));
   vec4 br = texture(u_texture, v_texCoord + vec2(d.x, d.y));
 
+  // Luminance-adaptive edge detection
+  vec3 lum = vec3(0.299, 0.587, 0.114);
+  float edge = dot(abs(t.rgb - b.rgb) + abs(l.rgb - r.rgb), lum);
+  float edgeWeight = clamp(edge * 4.0, 0.0, 1.0);
+
   // Compute 9-point local blur
   vec4 crossNeighbors = (t + b + l + r) * 0.25;
   vec4 diagNeighbors  = (tl + tr + bl + br) * 0.25;
   vec4 blur = crossNeighbors * 0.70 + diagNeighbors * 0.30;
+  vec4 detail = c - blur;
 
-  // Unsharp boost (0.85 boost for crisp anime line art)
-  vec4 sharp = c + (c - blur) * 0.85;
+  // Adaptive sharpening: gentle on flat areas, strong on edges
+  vec4 sharp = c + detail * mix(0.3, 1.2, edgeWeight);
 
-  // Anti-ringing constraint with slight headroom for micro-contrast
+  // Anti-ringing constraint with tight headroom for micro-contrast
   vec4 minNeighbor = min(min(min(t, b), min(l, r)), min(min(tl, tr), min(bl, br)));
   vec4 maxNeighbor = max(max(max(t, b), max(l, r)), max(max(tl, tr), max(bl, br)));
 
-  fragColor = clamp(sharp, max(minNeighbor - 0.05, 0.0), min(maxNeighbor + 0.05, 1.0));
+  fragColor = clamp(sharp, max(minNeighbor - 0.02, 0.0), min(maxNeighbor + 0.02, 1.0));
 }
 `;
