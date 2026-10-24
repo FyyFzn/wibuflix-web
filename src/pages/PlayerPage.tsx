@@ -706,7 +706,7 @@ export default function PlayerPage() {
               ref={videoRef}
               playsInline
               crossOrigin="anonymous"
-              className={`w-full h-full object-contain ${isUpscalingActive ? 'hidden' : 'block'}`}
+              className={`w-full h-full object-contain ${isUpscalingActive ? 'opacity-0 pointer-events-none absolute inset-0' : 'block'}`}
               onTimeUpdate={() => {
                 if (videoRef.current) setCurrentTime(videoRef.current.currentTime);
               }}

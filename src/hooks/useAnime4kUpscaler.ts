@@ -73,6 +73,7 @@ export function useAnime4kUpscaler({ videoRef, canvasRef, enabled }: UseAnime4kU
         if (pipeline) {
           pipeline.setOutputSize(targetWidth, targetHeight);
           setIsUpscalingActive(true);
+          renderCurrentFrame();
           startLoop();
         } else {
           setIsUpscalingActive(false);
@@ -84,6 +85,13 @@ export function useAnime4kUpscaler({ videoRef, canvasRef, enabled }: UseAnime4kU
       }
     };
 
+    const renderCurrentFrame = () => {
+      if (!videoRef.current || !pipelineRef.current) return;
+      try {
+        pipelineRef.current.renderFrame(videoRef.current);
+      } catch {}
+    };
+
     const startLoop = () => {
       if (isRunningRef.current) return;
       isRunningRef.current = true;
@@ -91,9 +99,7 @@ export function useAnime4kUpscaler({ videoRef, canvasRef, enabled }: UseAnime4kU
       const render = () => {
         if (!isRunningRef.current || !videoRef.current || !pipelineRef.current) return;
         try {
-          if (!videoRef.current.paused && !videoRef.current.ended) {
-            pipelineRef.current.renderFrame(videoRef.current);
-          }
+          pipelineRef.current.renderFrame(videoRef.current);
         } catch {
           // Ignore render dropped frames
         }
@@ -114,15 +120,23 @@ export function useAnime4kUpscaler({ videoRef, canvasRef, enabled }: UseAnime4kU
 
     video.addEventListener('loadedmetadata', handleLoadedMetadata);
     video.addEventListener('resize', handleLoadedMetadata);
-    video.addEventListener('canplay', handleLoadedMetadata);
+    video.addEventListener('canplay', () => {
+      handleLoadedMetadata();
+      renderCurrentFrame();
+    });
+    video.addEventListener('seeked', renderCurrentFrame);
     video.addEventListener('play', () => {
       if (isUpscalingActive) startLoop();
     });
-    video.addEventListener('pause', stopLoop);
+    video.addEventListener('pause', () => {
+      stopLoop();
+      renderCurrentFrame();
+    });
     video.addEventListener('ended', stopLoop);
 
     if (video.readyState >= 1) {
       handleLoadedMetadata();
+      renderCurrentFrame();
     }
 
     return () => {
@@ -130,6 +144,7 @@ export function useAnime4kUpscaler({ videoRef, canvasRef, enabled }: UseAnime4kU
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
       video.removeEventListener('resize', handleLoadedMetadata);
       video.removeEventListener('canplay', handleLoadedMetadata);
+      video.removeEventListener('seeked', renderCurrentFrame);
       video.removeEventListener('pause', stopLoop);
       video.removeEventListener('ended', stopLoop);
     };
